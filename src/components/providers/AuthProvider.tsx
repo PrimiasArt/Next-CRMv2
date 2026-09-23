@@ -52,25 +52,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string, tenantName: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName, tenant_name: tenantName },
+      },
+    });
     if (error) return { error: error.message };
 
-    if (data.user) {
-      const slug = tenantName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      const { data: tenant } = await supabase
-        .from('tenants')
-        .insert({ name: tenantName, slug })
-        .select()
-        .single();
+    if (data.user && data.session) {
+      const existing = await supabase.from('profiles').select('id').eq('id', data.user.id).single();
+      if (!existing.data) {
+        const slug = tenantName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const { data: tenant } = await supabase
+          .from('tenants')
+          .insert({ name: tenantName, slug: slug + '-' + data.user.id.slice(0, 8) })
+          .select()
+          .single();
+        if (tenant) {
+          await supabase.from('profiles').insert({
+            id: data.user.id,
+            tenant_id: (tenant as { id: string }).id,
+            role: 'admin',
+            full_name: fullName,
+          });
+        }
+      }
+    }
+    return {};
+  };
 
-      if (tenant) {
+  const signUpWithInvite = async (email: string, password: string, fullName: string, inviteCode: string) => {
+    const { data: invite } = await supabase
+      .from('invites')
+      .select('*')
+      .eq('invite_code', inviteCode.toUpperCase())
+      .is('used_at', null)
+      .single();
+
+    if (!invite) return { error: 'Mã mời không hợp lệ hoặc đã được sử dụng' };
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName, invite_code: inviteCode },
+      },
+    });
+    if (error) return { error: error.message };
+
+    if (data.user && data.session) {
+      const existing = await supabase.from('profiles').select('id').eq('id', data.user.id).single();
+      if (!existing.data) {
         await supabase.from('profiles').insert({
           id: data.user.id,
-          tenant_id: (tenant as { id: string }).id,
-          role: 'admin',
+          tenant_id: (invite as { tenant_id: string }).tenant_id,
+          role: (invite as { role: string }).role,
           full_name: fullName,
         });
       }
+      await supabase
+        .from('invites')
+        .update({ used_at: new Date().toISOString() })
+        .eq('id', (invite as { id: string }).id);
     }
     return {};
   };
