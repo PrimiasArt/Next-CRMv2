@@ -30,14 +30,18 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && !isAuthRoute && !isApiRoute) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('invite_code')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('invite_code')
+        .eq('id', user.id)
+        .single();
 
-    if (profile?.invite_code) {
-      return NextResponse.redirect(new URL('/login?verify=1', request.url));
+      if (profile?.invite_code) {
+        return NextResponse.redirect(new URL('/login?verify=1', request.url));
+      }
+    } catch {
+      // invite_code column may not exist yet — skip check
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Table, Tag, Select, Button, Popconfirm, Space, Card, Empty, App, Tooltip, Typography, Modal, Form, Input } from 'antd';
-import { DeleteOutlined, CrownOutlined, UserOutlined, HomeOutlined, EyeOutlined, SafetyCertificateOutlined, TeamOutlined, UserAddOutlined, CopyOutlined } from '@ant-design/icons';
+import { DeleteOutlined, CrownOutlined, UserOutlined, HomeOutlined, EyeOutlined, SafetyCertificateOutlined, TeamOutlined, UserAddOutlined, CopyOutlined, LockOutlined } from '@ant-design/icons';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import type { TeamMember } from '@/hooks/useTeam';
@@ -37,6 +37,9 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onR
   const [creating, setCreating] = useState(false);
   const [createdInfo, setCreatedInfo] = useState<{ email: string; inviteCode: string } | null>(null);
   const [createForm] = Form.useForm();
+  const [pwModalMember, setPwModalMember] = useState<TeamMember | null>(null);
+  const [changingPw, setChangingPw] = useState(false);
+  const [pwForm] = Form.useForm();
 
   const getRoleMeta = (roleName: string) => {
     const r = roles.find((role) => role.name === roleName);
@@ -82,6 +85,36 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onR
       navigator.clipboard.writeText(createdInfo.inviteCode);
       message.success(t('settings.code_copied'));
     }
+  };
+
+  const isAdmin = profile?.role === 'admin';
+
+  const handleAdminChangePw = async () => {
+    if (!pwModalMember) return;
+    const values = await pwForm.validateFields();
+    if (values.new_password !== values.confirm_password) {
+      message.error(t('settings.pw_mismatch'));
+      return;
+    }
+    setChangingPw(true);
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: pwModalMember.id, newPassword: values.new_password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        message.error(data.error || 'Failed');
+      } else {
+        message.success(t('settings.pw_changed'));
+        setPwModalMember(null);
+        pwForm.resetFields();
+      }
+    } catch {
+      message.error(t('settings.pw_change_failed'));
+    }
+    setChangingPw(false);
   };
 
   const columns = [
@@ -142,19 +175,24 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onR
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 80,
+      width: 120,
       render: (_: unknown, r: TeamMember) => {
         if (r.id === user?.id) return null;
         return (
-          <Popconfirm title={t('settings.confirm_remove')} onConfirm={() => onRemove(r.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />} size="small" />
-          </Popconfirm>
+          <Space size={0}>
+            {isAdmin && (
+              <Tooltip title={t('settings.change_password')}>
+                <Button type="link" icon={<LockOutlined />} size="small" onClick={() => setPwModalMember(r)} />
+              </Tooltip>
+            )}
+            <Popconfirm title={t('settings.confirm_remove')} onConfirm={() => onRemove(r.id)}>
+              <Button type="link" danger icon={<DeleteOutlined />} size="small" />
+            </Popconfirm>
+          </Space>
         );
       },
     },
   ];
-
-  const isAdmin = profile?.role === 'admin';
 
   return (
     <Card
@@ -239,6 +277,32 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onR
             </Form.Item>
           </Form>
         )}
+      </Modal>
+
+      <Modal
+        title={`${t('settings.change_password')} — ${pwModalMember?.full_name || pwModalMember?.email || ''}`}
+        open={!!pwModalMember}
+        onCancel={() => { setPwModalMember(null); pwForm.resetFields(); }}
+        onOk={handleAdminChangePw}
+        confirmLoading={changingPw}
+        destroyOnHidden
+      >
+        <Form form={pwForm} layout="vertical">
+          <Form.Item
+            label={t('settings.new_password')}
+            name="new_password"
+            rules={[{ required: true, min: 6 }]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item
+            label={t('settings.confirm_password')}
+            name="confirm_password"
+            rules={[{ required: true, min: 6 }]}
+          >
+            <Input.Password />
+          </Form.Item>
+        </Form>
       </Modal>
     </Card>
   );
