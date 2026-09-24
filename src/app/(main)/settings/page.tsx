@@ -47,6 +47,7 @@ export default function SettingsPage() {
               roles={roles}
               onChangeRole={team.changeRole}
               onRemove={team.remove}
+              onRefresh={team.refresh}
             />
             <InviteSection
               invites={team.invites}

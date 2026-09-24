@@ -1,6 +1,6 @@
 -- ============================================================
 -- NEXT-CRM: CHẠY FILE NÀY TRONG SUPABASE SQL EDITOR
--- Bao gồm: custom_roles + auth trigger + fix dữ liệu cũ
+-- Bao gồm: custom_roles + auth trigger + dynamic RLS + fix dữ liệu
 -- ============================================================
 
 -- ==================== PHẦN 1: CUSTOM ROLES ====================
@@ -99,7 +99,6 @@ DECLARE
 BEGIN
   meta := new.raw_user_meta_data;
 
-  -- Đăng ký bằng mã mời
   IF meta->>'invite_code' IS NOT NULL THEN
     SELECT * INTO invite_record FROM public.invites
     WHERE invite_code = upper(meta->>'invite_code')
@@ -114,7 +113,6 @@ BEGIN
       UPDATE public.invites SET used_at = now() WHERE id = invite_record.id;
     END IF;
 
-  -- Tạo công ty mới
   ELSIF meta->>'tenant_name' IS NOT NULL THEN
     slug := lower(regexp_replace(meta->>'tenant_name', '\s+', '-', 'g'));
     slug := regexp_replace(slug, '[^a-z0-9-]', '', 'g');
@@ -139,9 +137,106 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 
--- ==================== PHẦN 3: FIX DỮ LIỆU CŨ ====================
+-- ==================== PHẦN 3: DYNAMIC RLS ====================
+-- Thay thế hardcoded role checks bằng permission-based checks
 
--- 3a. Tạo profile cho user đã đăng ký nhưng chưa có profile (match bằng email invite)
+-- 3a. Tạo function kiểm tra quyền từ custom_roles
+CREATE OR REPLACE FUNCTION public.has_permission(perm text)
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.custom_roles cr
+    WHERE cr.tenant_id = public.get_tenant_id()
+      AND cr.name = public.get_user_role()
+      AND cr.permissions ? perm
+  )
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- 3b. Xóa policies cũ (hardcoded roles)
+
+-- customers
+DROP POLICY IF EXISTS "staff_insert_customers" ON customers;
+DROP POLICY IF EXISTS "staff_update_customers" ON customers;
+DROP POLICY IF EXISTS "admin_delete_customers" ON customers;
+
+-- products
+DROP POLICY IF EXISTS "staff_insert_products" ON products;
+DROP POLICY IF EXISTS "staff_update_products" ON products;
+DROP POLICY IF EXISTS "admin_delete_products" ON products;
+
+-- orders
+DROP POLICY IF EXISTS "staff_insert_orders" ON orders;
+DROP POLICY IF EXISTS "staff_update_orders" ON orders;
+DROP POLICY IF EXISTS "admin_delete_orders" ON orders;
+
+-- order_items
+DROP POLICY IF EXISTS "staff_insert_order_items" ON order_items;
+DROP POLICY IF EXISTS "staff_update_order_items" ON order_items;
+DROP POLICY IF EXISTS "admin_delete_order_items" ON order_items;
+
+-- warehouses
+DROP POLICY IF EXISTS "manage_insert_warehouses" ON warehouses;
+DROP POLICY IF EXISTS "manage_update_warehouses" ON warehouses;
+DROP POLICY IF EXISTS "admin_delete_warehouses" ON warehouses;
+
+-- 3c. Tạo policies mới (dynamic permission)
+
+-- CUSTOMERS
+CREATE POLICY "perm_insert_customers" ON customers FOR INSERT
+  WITH CHECK (tenant_id = public.get_tenant_id() AND public.has_permission('customers.create'));
+CREATE POLICY "perm_update_customers" ON customers FOR UPDATE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('customers.edit'));
+CREATE POLICY "perm_delete_customers" ON customers FOR DELETE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('customers.delete'));
+
+-- PRODUCTS
+CREATE POLICY "perm_insert_products" ON products FOR INSERT
+  WITH CHECK (tenant_id = public.get_tenant_id() AND public.has_permission('products.create'));
+CREATE POLICY "perm_update_products" ON products FOR UPDATE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('products.edit'));
+CREATE POLICY "perm_delete_products" ON products FOR DELETE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('products.delete'));
+
+-- ORDERS
+CREATE POLICY "perm_insert_orders" ON orders FOR INSERT
+  WITH CHECK (tenant_id = public.get_tenant_id() AND public.has_permission('orders.create'));
+CREATE POLICY "perm_update_orders" ON orders FOR UPDATE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('orders.edit'));
+CREATE POLICY "perm_delete_orders" ON orders FOR DELETE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('orders.delete'));
+
+-- ORDER_ITEMS (quyền theo orders)
+CREATE POLICY "perm_insert_order_items" ON order_items FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND orders.tenant_id = public.get_tenant_id())
+    AND public.has_permission('orders.create')
+  );
+CREATE POLICY "perm_update_order_items" ON order_items FOR UPDATE
+  USING (
+    EXISTS (SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND orders.tenant_id = public.get_tenant_id())
+    AND public.has_permission('orders.edit')
+  );
+CREATE POLICY "perm_delete_order_items" ON order_items FOR DELETE
+  USING (
+    EXISTS (SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND orders.tenant_id = public.get_tenant_id())
+    AND public.has_permission('orders.delete')
+  );
+
+-- WAREHOUSES
+CREATE POLICY "perm_insert_warehouses" ON warehouses FOR INSERT
+  WITH CHECK (tenant_id = public.get_tenant_id() AND public.has_permission('warehouses.manage'));
+CREATE POLICY "perm_update_warehouses" ON warehouses FOR UPDATE
+  USING (tenant_id = public.get_tenant_id() AND public.has_permission('warehouses.manage'));
+CREATE POLICY "perm_delete_warehouses" ON warehouses FOR DELETE
+  USING (tenant_id = public.get_tenant_id() AND public.get_user_role() = 'admin');
+
+
+-- ==================== PHẦN 3.5: INVITE CODE CHO ADMIN TẠO TK ====================
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS invite_code text;
+
+
+-- ==================== PHẦN 4: FIX DỮ LIỆU CŨ ====================
+
+-- 4a. Tạo profile cho user đã đăng ký nhưng chưa có profile (match bằng email)
 INSERT INTO profiles (id, tenant_id, role, full_name)
 SELECT DISTINCT ON (au.id)
   au.id,
@@ -155,7 +250,7 @@ WHERE i.email IS NOT NULL
 ORDER BY au.id, i.created_at DESC
 ON CONFLICT (id) DO NOTHING;
 
--- 3b. Tạo profile cho user có invite_code trong metadata
+-- 4b. Tạo profile cho user có invite_code trong metadata
 INSERT INTO profiles (id, tenant_id, role, full_name)
 SELECT DISTINCT ON (au.id)
   au.id,
@@ -169,7 +264,7 @@ WHERE au.raw_user_meta_data->>'invite_code' IS NOT NULL
 ORDER BY au.id, i.created_at DESC
 ON CONFLICT (id) DO NOTHING;
 
--- 3c. Đánh dấu invite đã dùng (match bằng email)
+-- 4c. Đánh dấu invite đã dùng (match bằng email)
 UPDATE invites
 SET used_at = now()
 WHERE used_at IS NULL
@@ -179,7 +274,7 @@ WHERE used_at IS NULL
     WHERE lower(au.email) = lower(invites.email)
   );
 
--- 3d. Đánh dấu invite đã dùng (match bằng invite_code trong metadata)
+-- 4d. Đánh dấu invite đã dùng (match bằng invite_code trong metadata)
 UPDATE invites
 SET used_at = now()
 WHERE used_at IS NULL
@@ -189,11 +284,10 @@ WHERE used_at IS NULL
   );
 
 -- ==================== HOÀN TẤT ====================
--- Kiểm tra kết quả:
-SELECT 'Profiles' as table_name, count(*) as total FROM profiles
+SELECT 'Profiles' as "Bảng", count(*) as "Số lượng" FROM profiles
 UNION ALL
 SELECT 'Custom Roles', count(*) FROM custom_roles
 UNION ALL
-SELECT 'Invites (unused)', count(*) FROM invites WHERE used_at IS NULL
+SELECT 'Invites (chưa dùng)', count(*) FROM invites WHERE used_at IS NULL
 UNION ALL
-SELECT 'Invites (used)', count(*) FROM invites WHERE used_at IS NOT NULL;
+SELECT 'Invites (đã dùng)', count(*) FROM invites WHERE used_at IS NOT NULL;

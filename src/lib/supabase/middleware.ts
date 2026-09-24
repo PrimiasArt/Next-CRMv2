@@ -23,11 +23,25 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
   const isAuthRoute = path.startsWith('/login') || path.startsWith('/register');
+  const isApiRoute = path.startsWith('/api');
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isApiRoute) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
-  if (user && isAuthRoute) {
+
+  if (user && !isAuthRoute && !isApiRoute) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('invite_code')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.invite_code) {
+      return NextResponse.redirect(new URL('/login?verify=1', request.url));
+    }
+  }
+
+  if (user && isAuthRoute && !request.nextUrl.searchParams.has('verify')) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

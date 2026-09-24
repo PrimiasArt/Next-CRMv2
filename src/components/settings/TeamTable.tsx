@@ -1,7 +1,8 @@
 'use client';
 
-import { Table, Tag, Select, Button, Popconfirm, Space, Card, Empty, App, Tooltip, Typography } from 'antd';
-import { DeleteOutlined, CrownOutlined, UserOutlined, HomeOutlined, EyeOutlined, SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Table, Tag, Select, Button, Popconfirm, Space, Card, Empty, App, Tooltip, Typography, Modal, Form, Input } from 'antd';
+import { DeleteOutlined, CrownOutlined, UserOutlined, HomeOutlined, EyeOutlined, SafetyCertificateOutlined, TeamOutlined, UserAddOutlined, CopyOutlined } from '@ant-design/icons';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuth } from '@/hooks/useAuth';
 import type { TeamMember } from '@/hooks/useTeam';
@@ -25,12 +26,17 @@ interface Props {
   roles: CustomRole[];
   onChangeRole: (memberId: string, role: Role) => Promise<void>;
   onRemove: (memberId: string) => Promise<void>;
+  onRefresh?: () => void;
 }
 
-export function TeamTable({ members, loading, roles, onChangeRole, onRemove }: Props) {
+export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onRefresh }: Props) {
   const { t } = useLocale();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { message } = App.useApp();
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState<{ email: string; inviteCode: string } | null>(null);
+  const [createForm] = Form.useForm();
 
   const getRoleMeta = (roleName: string) => {
     const r = roles.find((role) => role.name === roleName);
@@ -44,6 +50,37 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove }: P
       message.success(t('common.save'));
     } catch {
       message.error('Failed to change role');
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    const values = await createForm.validateFields();
+    setCreating(true);
+    try {
+      const res = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        message.error(data.error || 'Failed');
+        setCreating(false);
+        return;
+      }
+      setCreatedInfo({ email: values.email, inviteCode: data.inviteCode });
+      createForm.resetFields();
+      onRefresh?.();
+    } catch {
+      message.error('Failed to create account');
+    }
+    setCreating(false);
+  };
+
+  const copyInviteCode = () => {
+    if (createdInfo) {
+      navigator.clipboard.writeText(createdInfo.inviteCode);
+      message.success(t('settings.code_copied'));
     }
   };
 
@@ -117,8 +154,18 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove }: P
     },
   ];
 
+  const isAdmin = profile?.role === 'admin';
+
   return (
-    <Card title={t('settings.team')} style={{ marginTop: 16 }}>
+    <Card
+      title={t('settings.team')}
+      style={{ marginTop: 16 }}
+      extra={isAdmin && (
+        <Button type="primary" icon={<UserAddOutlined />} onClick={() => setCreateModalOpen(true)}>
+          {t('settings.create_account')}
+        </Button>
+      )}
+    >
       <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
         {t('role.team_hint')}
       </Text>
@@ -134,6 +181,65 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove }: P
           size="small"
         />
       )}
+
+      <Modal
+        title={t('settings.create_account')}
+        open={createModalOpen}
+        onCancel={() => { setCreateModalOpen(false); setCreatedInfo(null); }}
+        footer={createdInfo ? [
+          <Button key="close" onClick={() => { setCreateModalOpen(false); setCreatedInfo(null); }}>
+            {t('common.cancel')}
+          </Button>,
+        ] : undefined}
+        onOk={createdInfo ? undefined : handleCreateAccount}
+        confirmLoading={creating}
+        destroyOnHidden
+      >
+        {createdInfo ? (
+          <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#10B981' }}>
+              {t('settings.account_created')}
+            </div>
+            <div style={{ marginBottom: 8 }}><b>Email:</b> {createdInfo.email}</div>
+            <div style={{ marginBottom: 16 }}>
+              <b>{t('settings.first_login_code')}:</b>
+              <Tag
+                color="green"
+                style={{ fontSize: 18, padding: '4px 12px', marginLeft: 8, cursor: 'pointer' }}
+                onClick={copyInviteCode}
+              >
+                {createdInfo.inviteCode} <CopyOutlined />
+              </Tag>
+            </div>
+            <Text type="secondary">{t('settings.give_code_hint')}</Text>
+          </div>
+        ) : (
+          <Form form={createForm} layout="vertical" initialValues={{ role: 'staff' }}>
+            <Form.Item label={t('auth.email')} name="email" rules={[{ required: true, type: 'email' }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item label={t('auth.password')} name="password" rules={[{ required: true, min: 6 }]}>
+              <Input.Password />
+            </Form.Item>
+            <Form.Item label={t('auth.full_name')} name="fullName" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item label={t('settings.role')} name="role">
+              <Select
+                options={roles.map((r) => ({
+                  value: r.name,
+                  label: (
+                    <Space size={4}>
+                      {ICON_MAP[r.icon] || <UserOutlined />}
+                      <span>{r.display_name}</span>
+                    </Space>
+                  ),
+                }))}
+              />
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
     </Card>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
-import { Card, Form, Input, Button, Avatar, Space, Tag, App } from 'antd';
-import { UserOutlined, SaveOutlined, CameraOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Avatar, Space, Tag, App, Divider } from 'antd';
+import { UserOutlined, SaveOutlined, CameraOutlined, LockOutlined } from '@ant-design/icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocale } from '@/hooks/useLocale';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -16,7 +16,9 @@ export function ProfileCard() {
   const { t } = useLocale();
   const { message } = App.useApp();
   const [form] = Form.useForm();
+  const [pwForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +59,24 @@ export function ProfileCard() {
       message.error('Failed to update profile');
     }
     setSaving(false);
+  };
+
+  const handleChangePassword = async () => {
+    const values = await pwForm.validateFields();
+    if (values.new_password !== values.confirm_password) {
+      message.error(t('settings.pw_mismatch'));
+      return;
+    }
+    setChangingPw(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: values.new_password });
+      if (error) throw error;
+      message.success(t('settings.pw_changed'));
+      pwForm.resetFields();
+    } catch {
+      message.error(t('settings.pw_change_failed'));
+    }
+    setChangingPw(false);
   };
 
   return (
@@ -120,6 +140,36 @@ export function ProfileCard() {
             </Button>
           </Form.Item>
         </Form>
+
+        <Divider />
+
+        <div style={{ maxWidth: 400 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
+            <LockOutlined style={{ marginRight: 8 }} />
+            {t('settings.change_password')}
+          </div>
+          <Form form={pwForm} layout="vertical" onFinish={handleChangePassword}>
+            <Form.Item
+              label={t('settings.new_password')}
+              name="new_password"
+              rules={[{ required: true, min: 6 }]}
+            >
+              <Input.Password />
+            </Form.Item>
+            <Form.Item
+              label={t('settings.confirm_password')}
+              name="confirm_password"
+              rules={[{ required: true, min: 6 }]}
+            >
+              <Input.Password />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" icon={<LockOutlined />} loading={changingPw}>
+                {t('settings.change_password')}
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
       </Space>
     </Card>
   );

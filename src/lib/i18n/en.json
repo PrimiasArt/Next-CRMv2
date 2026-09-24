@@ -236,5 +236,19 @@
   "perm.settings.channels": "Manage channels",
   "perm.settings.api": "API settings",
   "perm.settings.currency": "Currency settings",
-  "perm.audit.view": "View audit log"
+  "perm.audit.view": "View audit log",
+  "settings.change_password": "Change Password",
+  "settings.new_password": "New Password",
+  "settings.confirm_password": "Confirm Password",
+  "settings.pw_mismatch": "Passwords do not match",
+  "settings.pw_changed": "Password changed successfully",
+  "settings.pw_change_failed": "Failed to change password",
+  "settings.create_account": "Create Account",
+  "settings.account_created": "Account created successfully!",
+  "settings.first_login_code": "First Login Code",
+  "settings.give_code_hint": "Give this code to the employee for first login verification",
+  "settings.first_login_verify": "First Login Verification",
+  "settings.enter_invite_code": "Enter the verification code given by your admin",
+  "settings.verify_code": "Verify",
+  "settings.invalid_code": "Invalid verification code"
 }

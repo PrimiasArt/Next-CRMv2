@@ -236,5 +236,19 @@
   "perm.settings.channels": "Quản lý kênh bán",
   "perm.settings.api": "Cài đặt API",
   "perm.settings.currency": "Cài đặt tiền tệ",
-  "perm.audit.view": "Xem nhật ký"
+  "perm.audit.view": "Xem nhật ký",
+  "settings.change_password": "Đổi Mật Khẩu",
+  "settings.new_password": "Mật Khẩu Mới",
+  "settings.confirm_password": "Xác Nhận Mật Khẩu",
+  "settings.pw_mismatch": "Mật khẩu xác nhận không khớp",
+  "settings.pw_changed": "Đổi mật khẩu thành công",
+  "settings.pw_change_failed": "Đổi mật khẩu thất bại",
+  "settings.create_account": "Tạo Tài Khoản",
+  "settings.account_created": "Tạo tài khoản thành công!",
+  "settings.first_login_code": "Mã Xác Thực Lần Đầu",
+  "settings.give_code_hint": "Gửi mã này cho nhân viên để xác thực lần đăng nhập đầu tiên",
+  "settings.first_login_verify": "Xác Thực Lần Đầu",
+  "settings.enter_invite_code": "Nhập mã xác thực được cấp bởi quản trị viên",
+  "settings.verify_code": "Xác Thực",
+  "settings.invalid_code": "Mã xác thực không đúng"
 }
