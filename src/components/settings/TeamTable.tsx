@@ -195,18 +195,17 @@ export function TeamTable({ members, loading, roles, onChangeRole, onRemove, onR
   ];
 
   return (
-    <Card
-      title={t('settings.team')}
-      style={{ marginTop: 16 }}
-      extra={isAdmin && (
-        <Button type="primary" icon={<UserAddOutlined />} onClick={() => setCreateModalOpen(true)}>
-          {t('settings.create_account')}
-        </Button>
-      )}
-    >
-      <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-        {t('role.team_hint')}
-      </Text>
+    <Card title={t('settings.team')} style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {t('role.team_hint')}
+        </Text>
+        {isAdmin && (
+          <Button type="primary" icon={<UserAddOutlined />} onClick={() => setCreateModalOpen(true)}>
+            {t('settings.create_account')}
+          </Button>
+        )}
+      </div>
       {members.length === 0 && !loading ? (
         <Empty description={t('settings.no_members')} />
       ) : (
